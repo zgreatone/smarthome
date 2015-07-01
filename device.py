@@ -4,9 +4,13 @@ import requests
 import simplejson as json
 import random
 import time
+from requests.auth import HTTPDigestAuth
+
+import vera_config
+
 
 # super class modal for devices
-class Device():
+class Device:
     id = 0
     name = ""
     room = ""
@@ -21,21 +25,33 @@ class Device():
     def __repr__(self):
         return json.dumps({"id": self.id, "name": self.name, "room": self.room, "state": self.state})
 
-    def getState(self):
+    def get_state(self):
         return self.state
 
-    def getId(self):
+    def get_id(self):
         return self.id
 
-    def updateState(self, newState):
+    def update_state(self, newState):
         self.state = newState
-        
-    def verifyState(self, targetState):
+
+    def verify_state(self, targetState):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         for i in range(80):
-            p = { 'DeviceNum': self.id, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=status&output_format=json", params = p)
-            states = json.loads(response.__dict__['_content'])['Device_Num_'+str(self.id)]['states']
-            
+            p = {'DeviceNum': self.id, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.id)]['states']
+
             for state in states:
                 if state["variable"] == "Status":
                     self.state = state["value"]
@@ -45,19 +61,33 @@ class Device():
                 time.sleep(0.3)
         return False
 
-    def setState(self, targetState, serviceName):
+    def set_state(self, targetState, serviceName):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         # set state
-        p = { 'serviceId': serviceName, 'DeviceNum': self.id, 'newTargetValue': targetState, 'rand': random.random()}
-        response = requests.get("http://192.168.1.88/port_3480/data_request?id=lu_action&output_format=json&action=SetTarget", params = p)
+        p = {'serviceId': serviceName, 'DeviceNum': self.id, 'newTargetValue': targetState, 'rand': random.random()}
+        if auth_user is not None and auth_key is not None:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetTarget",
+                params=p,
+                auth=HTTPDigestAuth(auth_user, auth_key))
+        else:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetTarget",
+                params=p)
 
         # return response
         if "ERROR" not in response.__dict__['_content']:
-            if self.verifyState(targetState):
+            if self.verify_state(targetState):
                 return True
             else:
-                return jsonify(result = "Error", message = "Switching state of " + str(self.name) + "(" + str(self.id) + ") has timed out")
+                return jsonify(result="Error",
+                               message="Switching state of " + str(self.name) + "(" + str(self.id) + ") has timed out")
         else:
-            return jsonify(result = "Error", message = response.__dict__['_content'])
+            return jsonify(result="Error", message=response.__dict__['_content'])
+
 
 # class light inherits from device
 class Light(Device):
@@ -71,37 +101,64 @@ class Light(Device):
         self.brightness = brightness
 
     def __repr__(self):
-        if self.brightness == None:
-            return json.dumps({"id": self.id, "name": self.name, "room": self.room, "state": self.state, "brightness": self.brightness})
+        if self.brightness is None:
+            return json.dumps({"id": self.id, "name": self.name, "room": self.room, "state": self.state,
+                               "brightness": self.brightness})
         else:
             return json.dumps({"id": self.id, "name": self.name, "room": self.room, "state": self.state})
-        
-    def getBrightness(self):
+
+    def get_brightness(self):
         return self.brightness
-        
-    def updateBrightness (self, newBrightness):
+
+    def update_brightness(self, newBrightness):
         self.brightness = newBrightness
-        
-    def setBrightness(self, targetBrightness, serviceName):
+
+    def set_brightness(self, targetBrightness, serviceName):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         # set state
-        p = { 'serviceId': serviceName, 'DeviceNum': self.id, 'newLoadlevelTarget': targetBrightness, 'rand': random.random()}
-        response = requests.get("http://192.168.1.88/port_3480/data_request?id=lu_action&output_format=json&action=SetLoadLevelTarget", params = p)
+        p = {'serviceId': serviceName, 'DeviceNum': self.id, 'newLoadlevelTarget': targetBrightness,
+             'rand': random.random()}
+        if auth_user is not None and auth_key is not None:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetLoadLevelTarget",
+                params=p,
+                auth=HTTPDigestAuth(auth_user, auth_key))
+        else:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetLoadLevelTarget",
+                params=p)
 
         # return response
         if "ERROR" not in response.__dict__['_content']:
-            if self.verifyBrightness(targetBrightness):
+            if self.verify_brightness(targetBrightness):
                 return True
             else:
-                return jsonify(result = "Error", message = "Changing brightness of " + str(self.name) + "(" + str(self.id) + ") has timed out")
+                return jsonify(result="Error", message="Changing brightness of " + str(self.name) + "(" + str(
+                    self.id) + ") has timed out")
         else:
-            return jsonify(result = "Error", message = response.__dict__['_content'])
-            
-    def verifyBrightness(self, targetBrightness):
+            return jsonify(result="Error", message=response.__dict__['_content'])
+
+    def verify_brightness(self, targetBrightness):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         for i in range(80):
-            p = { 'DeviceNum': self.id, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=status&output_format=json", params = p)
-            states = json.loads(response.__dict__['_content'])['Device_Num_'+str(self.id)]['states']
-            
+            p = {'DeviceNum': self.id, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.id)]['states']
+
             for state in states:
                 if state["variable"] == "LoadLevelStatus":
                     self.state = state["value"]
@@ -111,9 +168,11 @@ class Light(Device):
                 time.sleep(0.3)
         return False
 
+
 # class lock inherits from device
 class Lock(Device):
     pass
+
 
 # class nest inherits from device and contains additional variables
 class Nest(Device):
@@ -133,32 +192,46 @@ class Nest(Device):
         self.controllerId = controllerId
 
     def __repr__(self):
-        return json.dumps({"id": self.id, "name": self.name, "room": self.room, "currentTemp": self.currentTemp, "maxTemp": self.maxTemp, "minTemp": self.minTemp, "controllerId": self.controllerId, "state": self.state})
+        return json.dumps({"id": self.id, "name": self.name, "room": self.room, "currentTemp": self.currentTemp,
+                           "maxTemp": self.maxTemp, "minTemp": self.minTemp, "controllerId": self.controllerId,
+                           "state": self.state})
 
-    def updateCurrentTemp(self, newCurrentTemp):
+    def update_current_temp(self, newCurrentTemp):
         self.currentTemp = newCurrentTemp
 
-    def updateMaxTemp(self, newMaxTemp):
+    def update_max_temp(self, newMaxTemp):
         self.maxTemp = newMaxTemp
 
-    def updateMinTemp(self, newMinTemp):
+    def update_min_temp(self, newMinTemp):
         self.minTemp = newMinTemp
 
-    def getControllerId(self):
+    def get_controller_id(self):
         return self.controllerId
 
-    def getMinTemp(self):
+    def get_min_temp(self):
         return self.minTemp
 
-    def getMaxTemp(self):
+    def get_max_temp(self):
         return self.maxTemp
 
-    def verifyTemp(self, targetMinTemp, targetMaxTemp):
+    def verify_temp(self, targetMinTemp, targetMaxTemp):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         for i in range(45):
-            p = { 'DeviceNum': self.id, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=status&output_format=json", params = p)
-            states = json.loads(response.__dict__['_content'])['Device_Num_'+str(self.id)]['states']
-            
+            p = {'DeviceNum': self.id, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.id)]['states']
+
             for state in states:
                 if state["variable"] == "CurrentTemperature":
                     self.currentTemp = state["value"]
@@ -174,32 +247,64 @@ class Nest(Device):
 
         return False
 
-    def setTemp(self, targetMinTemp, targetMaxTemp):
+    def set_temp(self, targetMinTemp, targetMaxTemp):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         if targetMinTemp != self.minTemp:
-            #set temp
-            p = { 'DeviceNum': self.id, 'NewCurrentSetpoint': targetMinTemp, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Heat", params = p)
+            # set temp
+            p = {'DeviceNum': self.id, 'NewCurrentSetpoint': targetMinTemp, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Heat",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Heat",
+                    params=p)
             if "ERROR" in response.__dict__['_content']:
-                return jsonify(result = "Error", message = response.__dict__['_content'])
+                return jsonify(result="Error", message=response.__dict__['_content'])
 
         if targetMaxTemp != self.maxTemp:
-            #set temp
-            p = { 'DeviceNum': self.id, 'NewCurrentSetpoint': targetMaxTemp, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Cool", params = p)
+            # set temp
+            p = {'DeviceNum': self.id, 'NewCurrentSetpoint': targetMaxTemp, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Cool",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Cool",
+                    params=p)
             if "ERROR" in response.__dict__['_content']:
-                return jsonify(result = "Error", message = response.__dict__['_content'])
+                return jsonify(result="Error", message=response.__dict__['_content'])
 
-        if self.verifyTemp(targetMinTemp, targetMaxTemp):
+        if self.verify_temp(targetMinTemp, targetMaxTemp):
             return True
         else:
-            return jsonify(result = "Error", message = "Switching temp of " + str(self.id) + " has timed out")
-            
-    def verifyState(self, targetState):
+            return jsonify(result="Error", message="Switching temp of " + str(self.id) + " has timed out")
+
+    def verify_state(self, targetState):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
         for i in range(500):
-            p = { 'DeviceNum': self.controllerId, 'rand': random.random() }
-            response = requests.get("http://192.168.1.88/port_3480/data_request?id=status&output_format=json", params = p)
-            states = json.loads(response.__dict__['_content'])['Device_Num_'+str(self.controllerId)]['states']
-            
+            p = {'DeviceNum': self.controllerId, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.controllerId)]['states']
+
             for state in states:
                 if state["variable"] == "OccupancyState":
                     if state["value"] == "Occupied":
@@ -220,16 +325,28 @@ class Nest(Device):
 
         return False
 
-    def setState(self, targetState, serviceName):
+    def set_state(self, targetState, serviceName):
         # set state
-        p = { 'serviceId': serviceName, 'DeviceNum': self.controllerId, 'NewOccupancyState': targetState, 'rand': random.random() }
-        response = requests.get("http://192.168.1.88/port_3480/data_request?id=lu_action&output_format=json&action=SetOccupancyState", params = p)
-
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
+        p = {'serviceId': serviceName, 'DeviceNum': self.controllerId, 'NewOccupancyState': targetState,
+             'rand': random.random()}
+        if auth_user is not None and auth_key is not None:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetOccupancyState",
+                params=p,
+                auth=HTTPDigestAuth(auth_user, auth_key))
+        else:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetOccupancyState",
+                params=p)
         # return response
         if "ERROR" not in response.__dict__['_content']:
-            if self.verifyState(targetState):
+            if self.verify_state(targetState):
                 return True
             else:
-                return jsonify(result = "Error", message = "Switching state of " + str(self.id) + " has timed out")
+                return jsonify(result="Error", message="Switching state of " + str(self.id) + " has timed out")
         else:
-            return jsonify(result = "Error", message = response.__dict__['_content'])
+            return jsonify(result="Error", message=response.__dict__['_content'])
