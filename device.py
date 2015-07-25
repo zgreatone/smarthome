@@ -350,3 +350,92 @@ class Nest(Device):
                 return jsonify(result="Error", message="Switching state of " + str(self.id) + " has timed out")
         else:
             return jsonify(result="Error", message=response.__dict__['_content'])
+
+
+# class light inherits from device
+class MotionSensor(Device):
+    armed = None
+    configured = None
+    capabilities = None
+
+    def __init__(self, id, name, room, state, configured, capabilities, armed):
+        self.id = id
+        self.name = name
+        self.room = room
+        self.state = state
+        self.configured = configured
+        self.capabilities = capabilities
+        self.armed = armed
+
+    def __repr__(self):
+        return json.dumps({"id": self.id, "name": self.name, "room": self.room, "state": self.state,
+                           "configured": self.configured, "capabilities": self.capabilities, "armed": self.armed})
+
+    def get_armed(self):
+        return self.armed
+
+    def update_armed(self, new_armed):
+        self.armed = new_armed
+
+    def set_state(self, target_state, service_name):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
+        # set state
+        p = {'serviceId': service_name, 'DeviceNum': self.id, 'newArmedValue': target_state,
+             'rand': random.random()}
+        if auth_user is not None and auth_key is not None:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetArmed",
+                params=p,
+                auth=HTTPDigestAuth(auth_user, auth_key))
+        else:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetArmed",
+                params=p)
+
+        # return response
+        if "ERROR" not in response.__dict__['_content']:
+            if self.verify_armed(target_state):
+                return True
+            else:
+                return jsonify(result="Error", message="Changing brightness of " + str(self.name) + "(" + str(
+                    self.id) + ") has timed out")
+        else:
+            return jsonify(result="Error", message=response.__dict__['_content'])
+
+    def verify_state(self, target_state):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
+        for i in range(80):
+            p = {'DeviceNum': self.id, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.id)]['states']
+
+            for state in states:
+                if state["variable"] == "Armed":
+                    self.state = state["value"]
+            if self.state == str(target_state):
+                return True
+            else:
+                time.sleep(0.3)
+        return False
+
+    def set_armed(self, target_armed, service_name):
+        return self.set_state(target_armed, service_name)
+
+    def verify_armed(self, target_armed):
+        return self.verify_state(target_armed)
+
+

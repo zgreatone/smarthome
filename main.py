@@ -58,6 +58,9 @@ locks = {}
 global nests
 nests = {}
 
+global motion_sensors
+motion_sensors = {}
+
 global verdeDevices
 verdeDevices = {}
 
@@ -68,6 +71,72 @@ smarthomeState = "smarthome_state_"
 @app.route("/")
 def hello():
     return "Hello World!"
+
+
+@app.route("/motion_senors", methods=['GET'])
+def list_motion_sensors():
+    retrieve_motion_sensor_data()
+    return jsonify(**motion_sensors)
+
+
+def retrieve_motion_sensor_data():
+    connection_config = vera_config.get_vera_config()
+    auth_user = connection_config['vera_auth_user']
+    auth_key = connection_config['vera_auth_password']
+    vera_ip = connection_config['vera_ip']
+    p = {'rand': random.random()}
+    if auth_user is not None and auth_key is not None:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=user_data",
+                                params=p,
+                                auth=HTTPDigestAuth(auth_user, auth_key))
+    else:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=user_data",
+                                params=p)
+
+    response_content = json.loads(response.__dict__['_content'])
+    devices = response_content['devices']
+    rooms = response_content['rooms']
+    available_scenes = response_content['scenes']
+    room_names = {}
+    for room in rooms:
+        if room["id"] not in room_names:
+            room_names[room["id"]] = room["name"]
+    for scene in available_scenes:
+        # add scene to dictionary (except it doesn't seem to really work like a dictionary)
+        scenes[str(scene["id"])] = Scene(str(str(scene["id"])), scene["name"])
+        # uncomment the below to have your scenes printed to stdout because of the problem with listScenes()
+        # print vars(scenes[str(scene["id"])])
+    for device in devices:
+        if "device_type" in device:
+            if "MotionSensor" in device["device_type"]:
+                # get room name
+                if int(device["room"]) not in room_names:
+                    roomName = "Room not found"
+                else:
+                    roomName = room_names[int(device["room"])]
+
+                # get device state
+                configured = None
+                capabilities = None
+                armed = None
+                motion = False
+                for state in device["states"]:
+                    if state["variable"] == "Armed":
+                        device_state = state["value"]
+                        armed = state["value"]
+                    if state["variable"] == "Capabilities":
+                        capabilities = state["value"]
+                    if state["variable"] == "Configured":
+                        configured = state["value"]
+                    if state["variable"] == "SensorMlType":
+                        if state["value"] == "1,3,5":
+                            motion = True
+
+                # add motion sensor to dictionary
+                if motion:
+                    motion_sensors[device["id"]] = MotionSensor(device["id"], device["name"], roomName, device_state,
+                                                                configured, capabilities, armed)
+    return motion_sensors
 
 
 @app.route("/lights", methods=['GET'])
@@ -132,6 +201,77 @@ def list_scenes():
         list_lights()
     # this function does not work because scenes is not JSON serializable. I could not figure out what to do about it
     return jsonify(**scenes)
+
+
+@app.route("/motion_sensor/<int:id>", methods=['GET'])
+def get_motion_sensor(id):
+    connection_config = vera_config.get_vera_config()
+    auth_user = connection_config['vera_auth_user']
+    auth_key = connection_config['vera_auth_password']
+    vera_ip = connection_config['vera_ip']
+
+    if motion_sensors == {}:
+        list_motion_senors()
+    p = {'DeviceNum': id, 'rand': random.random()}
+    if auth_user is not None and auth_key is not None:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                                params=p,
+                                auth=HTTPDigestAuth(auth_user, auth_key))
+    else:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                                params=p)
+    states = json.loads(response.__dict__['_content'])['Device_Num_' + str(id)]['states']
+
+    for state in states:
+        if state["variable"] == "Armed":
+            motion_sensors[str(id)].update_state(state["value"])
+
+    return jsonify(**motion_sensors[str(id)].__dict__)
+
+
+@app.route("/motion_sensor/<int:id>", methods=['PUT'])
+def put_motion_sensor(id):
+    if motion_sensors == {}:
+        list_motion_senors()
+
+    # check inputs
+    if str(id) not in motion_sensors:
+        return jsonify(result="Error", message="not a motion sensor")
+
+    if "state" not in request.get_json():
+        return jsonify(result="Error", message="State not specified")
+
+    change = motion_sensors[str(id)].set_state(request.get_json()['state'],
+                                               "urn:micasaverde-com:serviceId:SecuritySensor1")
+
+    if change is not True:
+        return change
+    else:
+        return jsonify(result="OK", state=request.get_json()['state'])
+
+
+@app.route("/motion_sensor/armed/<int:id>", methods=['PUT'])
+def put_motion_sensor_armed_state(id):
+    if motion_sensors == {}:
+        list_motion_senors()
+
+    # check inputs
+    if str(id) not in motion_sensors:
+        return jsonify(result="Error", message="not a motion sensor")
+
+    if lights[str(id)].brightness is None:
+        return jsonify(result="Error", message="Does not have brightness")
+
+    if "brightness" not in request.get_json():
+        return jsonify(result="Error", message="Brightness not specified")
+
+    change = motion_sensors[str(id)].set_brightness(request.get_json()['armed'],
+                                                    "urn:micasaverde-com:serviceId:SecuritySensor1")
+
+    if change is not True:
+        return change
+    else:
+        return jsonify(result="OK", state=request.get_json()['brightness'])
 
 
 @app.route("/lights/<int:id>", methods=['GET'])
