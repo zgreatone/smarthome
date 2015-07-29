@@ -19,9 +19,13 @@ class CustomJSONEncoder(JSONEncoder):
     def default(self, obj):
         try:
             if isinstance(obj, Device):
-                deviceDict = obj.__dict__
-                deviceDict['_type'] = obj.__class__.__name__
-                return deviceDict
+                device_dict = obj.__dict__
+                device_dict['_type'] = obj.__class__.__name__
+                return device_dict
+            elif isinstance(obj, Scene):
+                scene_dict = obj.__dict__
+                scene_dict['_type'] = obj.__class__.__name__
+                return scene_dict
             iterable = iter(obj)
         except TypeError:
             print(type(obj))
@@ -111,9 +115,9 @@ def retrieve_motion_sensor_data():
             if "MotionSensor" in device["device_type"]:
                 # get room name
                 if int(device["room"]) not in room_names:
-                    roomName = "Room not found"
+                    room_name = "Room not found"
                 else:
-                    roomName = room_names[int(device["room"])]
+                    room_name = room_names[int(device["room"])]
 
                 # get device state
                 configured = None
@@ -134,7 +138,7 @@ def retrieve_motion_sensor_data():
 
                 # add motion sensor to dictionary
                 if motion:
-                    motion_sensors[device["id"]] = MotionSensor(device["id"], device["name"], roomName, device_state,
+                    motion_sensors[device["id"]] = MotionSensor(device["id"], device["name"], room_name, device_state,
                                                                 configured, capabilities, armed)
     return motion_sensors
 
@@ -195,10 +199,16 @@ def retrieve_light_data():
     return lights
 
 
+def retrieve_scene_data():
+    if scenes == {}:
+        retrieve_light_data()
+
+    return scenes
+
+
 @app.route("/scenes", methods=['GET'])
 def list_scenes():
-    if lights == {}:
-        list_lights()
+    retrieve_scene_data()
     # this function does not work because scenes is not JSON serializable. I could not figure out what to do about it
     return jsonify(**scenes)
 
@@ -211,7 +221,7 @@ def get_motion_sensor(id):
     vera_ip = connection_config['vera_ip']
 
     if motion_sensors == {}:
-        list_motion_senors()
+        list_motion_sensors()
     p = {'DeviceNum': id, 'rand': random.random()}
     if auth_user is not None and auth_key is not None:
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
@@ -232,7 +242,7 @@ def get_motion_sensor(id):
 @app.route("/motion_sensor/<int:id>", methods=['PUT'])
 def put_motion_sensor(id):
     if motion_sensors == {}:
-        list_motion_senors()
+        list_motion_sensors()
 
     # check inputs
     if str(id) not in motion_sensors:
@@ -253,7 +263,7 @@ def put_motion_sensor(id):
 @app.route("/motion_sensor/armed/<int:id>", methods=['PUT'])
 def put_motion_sensor_armed_state(id):
     if motion_sensors == {}:
-        list_motion_senors()
+        list_motion_sensors()
 
     # check inputs
     if str(id) not in motion_sensors:

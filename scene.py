@@ -36,12 +36,12 @@ class Scene:
         p = {'serviceId': serviceName, 'SceneNum': self.id, 'rand': random.random()}
         if auth_user is not None and auth_key is not None:
             response = requests.get(
-                "http://" + vera_ip + "/port_3480//data_request?id=lu_action&output_format=json&action=RunScene",
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=RunScene",
                 params=p,
                 auth=HTTPDigestAuth(auth_user, auth_key))
         else:
             response = requests.get(
-                "http://" + vera_ip + "/port_3480//data_request?id=lu_action&output_format=json&action=RunScene",
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=RunScene",
                 params=p)
 
         # return response
