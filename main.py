@@ -206,6 +206,25 @@ def retrieve_scene_data():
     return scenes
 
 
+def retrieve_room_data():
+    connection_config = vera_config.get_vera_config()
+    auth_user = connection_config['vera_auth_user']
+    auth_key = connection_config['vera_auth_password']
+    vera_ip = connection_config['vera_ip']
+    p = {'rand': random.random()}
+    if auth_user is not None and auth_key is not None:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=user_data",
+                                params=p,
+                                auth=HTTPDigestAuth(auth_user, auth_key))
+    else:
+        response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=user_data",
+                                params=p)
+
+    responseContent = json.loads(response.__dict__['_content'])
+    rooms = responseContent['rooms']
+    return rooms
+
+
 @app.route("/scenes", methods=['GET'])
 def list_scenes():
     retrieve_scene_data()
@@ -215,11 +234,16 @@ def list_scenes():
 
 @app.route("/motion_sensor/<int:id>", methods=['GET'])
 def get_motion_sensor(id):
+    get_motion_sensor_info(id)
+
+    return jsonify(**motion_sensors[str(id)].__dict__)
+
+
+def get_motion_sensor_info(id):
     connection_config = vera_config.get_vera_config()
     auth_user = connection_config['vera_auth_user']
     auth_key = connection_config['vera_auth_password']
     vera_ip = connection_config['vera_ip']
-
     if motion_sensors == {}:
         list_motion_sensors()
     p = {'DeviceNum': id, 'rand': random.random()}
@@ -231,12 +255,11 @@ def get_motion_sensor(id):
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
                                 params=p)
     states = json.loads(response.__dict__['_content'])['Device_Num_' + str(id)]['states']
-
     for state in states:
         if state["variable"] == "Armed":
             motion_sensors[str(id)].update_state(state["value"])
 
-    return jsonify(**motion_sensors[str(id)].__dict__)
+    return motion_sensors[str(id)].__dict__
 
 
 @app.route("/motion_sensor/<int:id>", methods=['PUT'])
