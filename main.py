@@ -346,7 +346,6 @@ def modify_light_state(identifier, state):
 
 @app.route("/lights/brightness/<int:id>", methods=['PUT'])
 def put_light_brightness(id):
-
     if lights == {}:
         retrieve_light_data()
 
@@ -482,9 +481,9 @@ def put_lock(id):
 
 @app.route("/nests", methods=['GET'])
 def list_nests():
-    retrieve_nest_data()
+    nest_data = retrieve_nest_data()
 
-    return jsonify(**nests)
+    return jsonify(**nest_data)
 
 
 def retrieve_nest_data():
@@ -527,6 +526,8 @@ def retrieve_nest_data():
                             maxTemp = state["value"]
                         if "TemperatureSetpoint1_Heat" in state["service"] and state["variable"] == "CurrentSetpoint":
                             minTemp = state["value"]
+                        if state["variable"] == "ModeStatus":
+                            mode = state["value"]
 
                 else:
                     # get home/ away mode and id of controller
@@ -542,7 +543,7 @@ def retrieve_nest_data():
     # add nest to dictionary
     if deviceId is not None and controllerId is not None:
         nests[deviceId] = Nest(deviceId, deviceName, roomName, currentTemperature, maxTemp, minTemp, controllerId,
-                               deviceState)
+                               deviceState, mode)
     else:
         raise Exception('Problem with Nest API')
 
@@ -551,13 +552,13 @@ def retrieve_nest_data():
 
 @app.route("/nests/<int:id>", methods=['GET'])
 def get_nest(id):
+    if nests == {}:
+        retrieve_nest_data()
+
     connection_config = vera_config.get_vera_config()
     auth_user = connection_config['vera_auth_user']
     auth_key = connection_config['vera_auth_password']
     vera_ip = connection_config['vera_ip']
-    if nests == {}:
-        list_nests()
-
     p = {'DeviceNum': id, 'rand': random.random()}
     if auth_user is not None and auth_key is not None:
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
@@ -575,6 +576,8 @@ def get_nest(id):
             nests[str(id)].update_max_temp(state["value"])
         if "TemperatureSetpoint1_Heat" in state["service"] and state["variable"] == "CurrentSetpoint":
             nests[str(id)].update_min_temp(state["value"])
+        if state["variable"] == "ModeStatus":
+            nests[str(id)].update_mode(state["value"])
 
     # get state for controller
     controllerId = nests[str(id)].get_controller_id()
@@ -600,6 +603,8 @@ def get_nest(id):
 
 @app.route("/nests/<int:id>", methods=['PUT'])
 def put_nest(id):
+    if nests == {}:
+        retrieve_nest_data()
     # check inputs
     if str(id) not in nests:
         return jsonify(result="Error", message="Not a Nest")
@@ -618,28 +623,64 @@ def put_nest(id):
         return jsonify(result="Error", message="Wrong password")
 
     # make the changes
-    if "minTemp" in request.get_json() and "maxTemp" in request.get_json():
-        change = nests[str(id)].set_temp(request.get_json()['minTemp'], request.get_json()['maxTemp'])
-        if change is not True:
-            return change
-    elif "minTemp" in request.get_json() and "maxTemp" not in request.get_json():
-        change = nests[str(id)].set_temp(request.get_json()['minTemp'], nests[str(id)].get_max_temp())
-        if change is not True:
-            return change
-    elif "minTemp" not in request.get_json() and "maxTemp" in request.get_json():
-        change = nests[str(id)].set_temp(nests[str(id)].get_min_temp(), request.get_json()['maxTemp'])
-        if change is not True:
-            return change
+    temp_change = set_nest_temp(id,request.get_json())
+    if temp_change is not True:
+        return temp_change
 
-    if "state" in request.get_json():
-        if request.get_json()['state'] == "0":
-            change = nests[str(id)].set_state("Unoccupied", "urn:upnp-org:serviceId:HouseStatus1")
-        elif request.get_json()['state'] == "1":
-            change = nests[str(id)].set_state("Occupied", "urn:upnp-org:serviceId:HouseStatus1")
-        if change is not True:
-            return change
+    occupancy_change = set_nest_occupancy_status(id, request.get_json())
+    if occupancy_change is not True:
+        return occupancy_change
 
     return jsonify(result="OK", message="All changes made")
+
+
+def set_nest_temp(identifier, request_json):
+    if nests == {}:
+        retrieve_nest_data()
+
+    # make the changes
+    if "minTemp" in request_json and "maxTemp" in request_json:
+        change = nests[str(identifier)].set_temp(request_json['minTemp'], request_json['maxTemp'])
+        if change is not True:
+            return change
+    elif "minTemp" in request_json and "maxTemp" not in request_json:
+        change = nests[str(identifier)].set_temp(request_json['minTemp'], nests[str(identifier)].get_max_temp())
+        if change is not True:
+            return change
+    elif "minTemp" not in request_json and "maxTemp" in request_json:
+        change = nests[str(identifier)].set_temp(nests[str(identifier)].get_min_temp(), request_json['maxTemp'])
+        if change is not True:
+            return change
+
+
+def set_nest_occupancy_status(identifier, request_json):
+    if nests == {}:
+        retrieve_nest_data()
+
+    if "state" in request_json:
+        if request_json['state'] == "0":
+            change = nests[str(identifier)].set_state("Unoccupied", "urn:upnp-org:serviceId:HouseStatus1")
+        elif request.get_json()['state'] == "1":
+            change = nests[str(identifier)].set_state("Occupied", "urn:upnp-org:serviceId:HouseStatus1")
+        if change is not True:
+            return change
+
+
+def set_nest_mode(identifier, request_json):
+    if nests == {}:
+        retrieve_nest_data()
+
+    if "mode" in request_json:
+        if request_json['mode'] == "cool":
+            change = nests[str(identifier)].set_mode("CoolOn")
+        elif request.get_json()['mode'] == "heat":
+            change = nests[str(identifier)].set_mode("HeatOn")
+        elif request.get_json()['mode'] == "auto":
+            change = nests[str(identifier)].set_mode("AutoChangeOver")
+        elif request.get_json()['mode'] == "off":
+            change = nests[str(identifier)].set_mode("Off")
+        if change is not True:
+            return change
 
 
 @app.route("/states", methods=['GET'])

@@ -181,8 +181,9 @@ class Nest(Device):
     maxTemp = 78
     minTemp = 70
     controllerId = 0
+    mode = "NotSet"
 
-    def __init__(self, id, name, room, currentTemp, maxTemp, minTemp, controllerId, state):
+    def __init__(self, id, name, room, currentTemp, maxTemp, minTemp, controllerId, state, mode):
         self.id = id
         self.name = name
         self.room = room
@@ -191,6 +192,7 @@ class Nest(Device):
         self.maxTemp = maxTemp
         self.minTemp = minTemp
         self.controllerId = controllerId
+        self.mode = mode
 
     def __repr__(self):
         return json.dumps({"id": self.id, "name": self.name, "room": self.room, "currentTemp": self.currentTemp,
@@ -206,6 +208,9 @@ class Nest(Device):
     def update_min_temp(self, newMinTemp):
         self.minTemp = newMinTemp
 
+    def update_mode(self, new_mode):
+        self.mode = new_mode
+
     def get_controller_id(self):
         return self.controllerId
 
@@ -214,6 +219,9 @@ class Nest(Device):
 
     def get_max_temp(self):
         return self.maxTemp
+
+    def get_mode(self):
+        return self.mode
 
     def verify_temp(self, targetMinTemp, targetMaxTemp):
         connection_config = vera_config.get_vera_config()
@@ -266,7 +274,7 @@ class Nest(Device):
                     "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Heat",
                     params=p)
             if "ERROR" in response.__dict__['_content']:
-                return jsonify(result="Error", message=response.__dict__['_content'])
+                return json.dumps({"result": "Error", "message": str(response.__dict__['_content'])})
 
         if targetMaxTemp != self.maxTemp:
             # set temp
@@ -281,12 +289,65 @@ class Nest(Device):
                     "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetCurrentSetpoint&serviceId=urn:upnp-org:serviceId:TemperatureSetpoint1_Cool",
                     params=p)
             if "ERROR" in response.__dict__['_content']:
-                return jsonify(result="Error", message=response.__dict__['_content'])
+                return json.dumps({"result": "Error", "message": str(response.__dict__['_content'])})
 
         if self.verify_temp(targetMinTemp, targetMaxTemp):
             return True
         else:
-            return jsonify(result="Error", message="Switching temp of " + str(self.id) + " has timed out")
+            return json.dumps({"result": "Error", "message": "Switching temp of " + str(self.id) + " has timed out"})
+
+    def verify_mode(self, target_mode):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
+        for i in range(45):
+            p = {'DeviceNum': self.id, 'rand': random.random()}
+            if auth_user is not None and auth_key is not None:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p,
+                    auth=HTTPDigestAuth(auth_user, auth_key))
+            else:
+                response = requests.get(
+                    "http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
+                    params=p)
+            states = json.loads(response.__dict__['_content'])['Device_Num_' + str(self.id)]['states']
+
+            for state in states:
+                if state["variable"] == "ModeStatus":
+                    self.mode = state["value"]
+
+            if str(self.mode) == str(target_mode):
+                return True
+            else:
+                time.sleep(0.3)
+
+        return False
+
+    def set_mode(self, target_mode):
+        connection_config = vera_config.get_vera_config()
+        auth_user = connection_config['vera_auth_user']
+        auth_key = connection_config['vera_auth_password']
+        vera_ip = connection_config['vera_ip']
+        # set mode
+        p = {'DeviceNum': self.id, 'NewModeTarget': target_mode, 'rand': random.random()}
+        if auth_user is not None and auth_key is not None:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetModeTarget&serviceId=urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
+                params=p,
+                auth=HTTPDigestAuth(auth_user, auth_key))
+        else:
+            response = requests.get(
+                "http://" + vera_ip + "/port_3480/data_request?id=lu_action&output_format=json&action=SetModeTarget&serviceId=urn:upnp-org:serviceId:HVAC_UserOperatingMode1",
+                params=p)
+        if "ERROR" in response.__dict__['_content']:
+            return json.dumps({"result": "Error", "message": str(response.__dict__['_content'])})
+
+        if self.verify_mode(target_mode):
+            return True
+        else:
+            return json.dumps({"result": "Error", "message": "Switching temp of " + str(self.id) + " has timed out"})
 
     def verify_state(self, targetState):
         connection_config = vera_config.get_vera_config()
