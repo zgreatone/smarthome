@@ -79,8 +79,8 @@ def hello():
 
 @app.route("/motion_senors", methods=['GET'])
 def list_motion_sensors():
-    retrieve_motion_sensor_data()
-    return jsonify(**motion_sensors)
+    data = retrieve_motion_sensor_data()
+    return jsonify(**data)
 
 
 def retrieve_motion_sensor_data():
@@ -145,8 +145,8 @@ def retrieve_motion_sensor_data():
 
 @app.route("/lights", methods=['GET'])
 def list_lights():
-    retrieve_light_data()
-    return jsonify(**lights)
+    data = retrieve_light_data()
+    return jsonify(**data)
 
 
 def retrieve_light_data():
@@ -227,26 +227,26 @@ def retrieve_room_data():
 
 @app.route("/scenes", methods=['GET'])
 def list_scenes():
-    retrieve_scene_data()
+    data = retrieve_scene_data()
     # this function does not work because scenes is not JSON serializable. I could not figure out what to do about it
-    return jsonify(**scenes)
+    return jsonify(**data)
 
 
 @app.route("/motion_sensor/<int:id>", methods=['GET'])
 def get_motion_sensor(id):
-    get_motion_sensor_info(id)
+    response = get_motion_sensor_info(id)
 
-    return jsonify(**motion_sensors[str(id)].__dict__)
+    return jsonify(**response)
 
 
-def get_motion_sensor_info(id):
+def get_motion_sensor_info(identifier):
     connection_config = vera_config.get_vera_config()
     auth_user = connection_config['vera_auth_user']
     auth_key = connection_config['vera_auth_password']
     vera_ip = connection_config['vera_ip']
     if motion_sensors == {}:
         list_motion_sensors()
-    p = {'DeviceNum': id, 'rand': random.random()}
+    p = {'DeviceNum': identifier, 'rand': random.random()}
     if auth_user is not None and auth_key is not None:
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
                                 params=p,
@@ -254,57 +254,40 @@ def get_motion_sensor_info(id):
     else:
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
                                 params=p)
-    states = json.loads(response.__dict__['_content'])['Device_Num_' + str(id)]['states']
+    states = json.loads(response.__dict__['_content'])['Device_Num_' + str(identifier)]['states']
     for state in states:
         if state["variable"] == "Armed":
-            motion_sensors[str(id)].update_state(state["value"])
+            motion_sensors[str(identifier)].update_state(state["value"])
 
-    return motion_sensors[str(id)].__dict__
+    return motion_sensors[str(identifier)].__dict__
 
 
 @app.route("/motion_sensor/<int:id>", methods=['PUT'])
 def put_motion_sensor(id):
     if motion_sensors == {}:
         list_motion_sensors()
-
     # check inputs
     if str(id) not in motion_sensors:
-        return jsonify(result="Error", message="not a motion sensor")
+        return json.dumps({"result": "Error", "message": "not a motion sensor"})
 
     if "state" not in request.get_json():
-        return jsonify(result="Error", message="State not specified")
+        return json.dumps({"result": "Error", "message": "State not specified"})
 
-    change = motion_sensors[str(id)].set_state(request.get_json()['state'],
-                                               "urn:micasaverde-com:serviceId:SecuritySensor1")
+    sensor_state = request.get_json()['state']
 
-    if change is not True:
-        return change
-    else:
-        return jsonify(result="OK", state=request.get_json()['state'])
+    return modify_motion_sensor_state(id, sensor_state)
 
 
-@app.route("/motion_sensor/armed/<int:id>", methods=['PUT'])
-def put_motion_sensor_armed_state(id):
+def modify_motion_sensor_state(id, sensor_state):
     if motion_sensors == {}:
         list_motion_sensors()
 
-    # check inputs
-    if str(id) not in motion_sensors:
-        return jsonify(result="Error", message="not a motion sensor")
-
-    if lights[str(id)].brightness is None:
-        return jsonify(result="Error", message="Does not have brightness")
-
-    if "brightness" not in request.get_json():
-        return jsonify(result="Error", message="Brightness not specified")
-
-    change = motion_sensors[str(id)].set_brightness(request.get_json()['armed'],
-                                                    "urn:micasaverde-com:serviceId:SecuritySensor1")
-
+    change = motion_sensors[str(id)].set_state(sensor_state,
+                                               "urn:micasaverde-com:serviceId:SecuritySensor1")
     if change is not True:
         return change
     else:
-        return jsonify(result="OK", state=request.get_json()['brightness'])
+        return json.dumps({"result": "Ok", "state": sensor_state})
 
 
 @app.route("/lights/<int:id>", methods=['GET'])
@@ -315,7 +298,8 @@ def get_light(id):
     vera_ip = connection_config['vera_ip']
 
     if lights == {}:
-        list_lights()
+        retrieve_light_data()
+
     p = {'DeviceNum': id, 'rand': random.random()}
     if auth_user is not None and auth_key is not None:
         response = requests.get("http://" + vera_ip + "/port_3480/data_request?id=status&output_format=json",
@@ -330,33 +314,41 @@ def get_light(id):
         if state["variable"] == "Status":
             lights[str(id)].update_state(state["value"])
 
-    return jsonify(**lights[str(id)].__dict__)
+    return json.dumps(lights[str(id)].__dict__, cls=CustomJSONEncoder)
 
 
 @app.route("/lights/<int:id>", methods=['PUT'])
 def put_light(id):
     if lights == {}:
-        list_lights()
+        retrieve_light_data()
 
     # check inputs
     if str(id) not in lights:
-        return jsonify(result="Error", message="Not a light")
+        return json.dumps({"result": "Error", "message": "Not a light"})
 
     if "state" not in request.get_json():
-        return jsonify(result="Error", message="State not specified")
+        return json.dumps({"result": "Error", "message": "State not specified"})
 
-    change = lights[str(id)].set_state(request.get_json()['state'], "urn:upnp-org:serviceId:SwitchPower1")
+    state = request.get_json()['state']
+    return modify_light_state(id, state)
 
+
+def modify_light_state(identifier, state):
+    if lights == {}:
+        retrieve_light_data()
+
+    change = lights[str(identifier)].set_state(state, "urn:upnp-org:serviceId:SwitchPower1")
     if change is not True:
         return change
     else:
-        return jsonify(result="OK", state=request.get_json()['state'])
+        return json.dumps({"result": "OK", "state": state})
 
 
 @app.route("/lights/brightness/<int:id>", methods=['PUT'])
 def put_light_brightness(id):
+
     if lights == {}:
-        list_lights()
+        retrieve_light_data()
 
     # check inputs
     if str(id) not in lights:

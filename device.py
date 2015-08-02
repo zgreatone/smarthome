@@ -79,14 +79,15 @@ class Device:
                 params=p)
 
         # return response
-        if "ERROR" not in response.__dict__['_content']:
+        response_content = response.__dict__['_content'].decode("utf-8")
+        if "ERROR" not in response_content:
             if self.verify_state(targetState):
                 return True
             else:
-                return jsonify(result="Error",
-                               message="Switching state of " + str(self.name) + "(" + str(self.id) + ") has timed out")
+                error_message = "Switching state of " + str(self.name) + "(" + str(self.id) + ") has timed out"
+                return json.dumps({"result": "Error", "message": error_message})
         else:
-            return jsonify(result="Error", message=response.__dict__['_content'])
+            return json.dumps({"result": "Error", "message": response_content})
 
 
 # class light inherits from device
@@ -396,14 +397,15 @@ class MotionSensor(Device):
                 params=p)
 
         # return response
-        if "ERROR" not in response.__dict__['_content']:
+        response_content = response.__dict__['_content'].decode("utf-8")
+        if "ERROR" not in response_content:
             if self.verify_armed(target_state):
                 return True
             else:
-                return jsonify(result="Error", message="Changing brightness of " + str(self.name) + "(" + str(
-                    self.id) + ") has timed out")
+                error_message = "Changing brightness of " + str(self.name) + "(" + str(self.id) + ") has timed out"
+                return json.dumps({"result": "Error", "message": error_message})
         else:
-            return jsonify(result="Error", message=response.__dict__['_content'])
+            return json.dumps({"result": "Error", "message": response_content})
 
     def verify_state(self, target_state):
         connection_config = vera_config.get_vera_config()
@@ -437,5 +439,3 @@ class MotionSensor(Device):
 
     def verify_armed(self, target_armed):
         return self.verify_state(target_armed)
-
-
